@@ -78,4 +78,7 @@ shapeで3つ頂点を決めてそれぞれ頂点色を配してどーん、そ�
 
 [完]
 
-![qdd2d2222df](https://github.com/user-attachments/assets/bc2989f7-b18e-4392-b7ef-a2fb587bfbbd)
+![qdd2d2222df](https://github.com/user-attachments/assets/bc2989f7-b18e-4392-b7ef-a2fb587bfbbd)  
+やっぱり自作ライブラリなんか作るもんじゃないですね...何が利点なのかさっぱりわかんなくなった  
+でも上げないと気づけなかったかも？  
+気付けて良かったです。
