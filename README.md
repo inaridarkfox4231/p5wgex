@@ -33,4 +33,37 @@ pavelさんの流体シミュレーション：[WebGL Fluid Simulation](https://
 あとベクトルは3次元のVec3というのがあります。  
 軸周りの回転ができます。3次元なので出来て当たり前なんですがp5が導入してないので...  
 
-## 使用例
+## 使用例  
+RGB三角形
+```javascript
+function setup() {
+  createCanvas(400, 400, WEBGL);
+  const _node = new p5wgex.RenderNode(this._renderer.GL);
+  _node.registFigure("triangle", [
+    {size:1, name:"aIndex", data:[0, 1, 2]}
+  ]);
+  _node.registPainter("shader",
+  `#version 300 es
+   #define TAU 6.28318
+   in float aIndex;
+   out vec3 vColor;
+   void main(){
+     vColor = vec3((aIndex==0.0), (aIndex==1.0), (aIndex==2.0));
+     gl_Position = vec4(sin(TAU*aIndex/3.0), cos(TAU*aIndex/3.0), 1.0, 1.0);
+   }
+  `,
+  `#version 300 es
+   precision highp float;
+   in vec3 vColor;
+   out vec4 fragColor;
+   void main(){
+     fragColor = vec4(vColor, 1.0);
+   }
+  `);
+  _node.clear(0)
+       .use("shader", "triangle")
+       .drawArrays("triangles")
+       .unbind()
+       .flush();
+}
+```
