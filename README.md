@@ -82,3 +82,70 @@ shapeで3つ頂点を決めてそれぞれ頂点色を配してどーん、そ�
 やっぱり自作ライブラリなんか作るもんじゃないですね...何が利点なのかさっぱりわかんなくなった  
 でも上げないと気づけなかったかも？  
 気付けて良かったです。
+
+```js
+let _node;
+const _timer = new p5wgex.Timer();
+
+function setup() {
+  createCanvas(400, 400, WEBGL);
+  _node = new p5wgex.RenderNode(this._renderer.GL);
+  _node.registFigure("triangle", [
+    {size:1, name:"aIndex", data:[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+  ]);
+  _node.registIBO("triangleIBO", {data:[
+    0,1,2, 0,2,3, 0,3,4, 0,4,5, 0,5,6,
+    0,6,7, 0,7,8, 0,8,9, 0,9,10, 0,10,1
+  ]});
+  _node.registPainter("shader",
+  `#version 300 es
+   #define TAU 6.28318
+   in float aIndex;
+   uniform float uTime;
+   out vec2 vPosition;
+   void main(){
+     float r = (mod(aIndex, 2.0) == 0.0 ? 0.5 : 1.0);
+     vec2 p;
+     if(aIndex == 0.0){
+       p = vec2(0.0);
+     }else{
+       p = vec2(r*cos(TAU*aIndex/10.0), r*sin(TAU*aIndex/10.0));
+     }
+     float t = fract(uTime);
+     t = t * t * (3.0-2.0*t);
+     float angle = TAU*t/5.0;
+     p *= mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+     gl_Position = vec4(p, 1.0, 1.0);
+     vPosition = p;
+   }
+  `,
+  `#version 300 es
+   precision highp float;
+   in vec2 vPosition;
+   out vec4 fragColor;
+   void main(){
+     float l = length(vPosition);
+     vec3 color = 1.0-vec3(l*0.4, l*0.8, l*1.2);
+     fragColor = vec4(color, 1.0);
+   }
+  `);
+  _timer.initialize("time0");
+}
+function draw(){
+  const t = _timer.getElapsed("time0");
+  _node.clear(0)
+       .use("shader", "triangle")
+       .bindIBO("triangleIBO")
+       .setUniform("uTime", t)
+       .drawElements("triangles")
+       .unbind()
+       .flush();
+}
+```
+
+https://github.com/user-attachments/assets/24acf69e-d1e2-4aa6-8836-d27aa2a59bc2
+
+うん  
+glsl書くのが楽しい人でないと使えないやこれ  
+ごめんなさい  
+
