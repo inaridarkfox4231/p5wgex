@@ -145,6 +145,93 @@ function draw(){
 
 https://github.com/user-attachments/assets/24acf69e-d1e2-4aa6-8836-d27aa2a59bc2
 
+[インスタンシングの作例](https://openprocessing.org/sketch/2417016)
+```javascript
+// インスタンシング
+let _node;
+const mu = p5wgex.meshUtil;
+let LS;
+let pfc;
+
+const INSTANCE_COUNT = 3000;
+
+function setup() {
+  createCanvas(window.innerWidth, window.innerHeight, WEBGL);
+  pixelDensity(1);
+
+  _node = new p5wgex.RenderNode(this._renderer.GL);
+  const sp = mu.sphere({radius:0.06, detail:{x:24,y:24}});
+  const instancePositions = [];
+  const instanceColors = [];
+  for(let i=0; i<INSTANCE_COUNT; i++){
+    const v = getRandom3D().mult(6);
+    instancePositions.push(v.x,v.y,v.z);
+    instanceColors.push(...p5wgex.coulour("hsv", 0.5+Math.random()*0.15, 0.4+0.6*Math.random(), 1.0));
+  }
+  mu.regist(_node, sp, "sphere", {otherAttrs:[
+    {name:"aInstancePosition", size:3, data:instancePositions, divisor:1},
+    {name:"aInstanceColor", size:4, data:instanceColors, divisor:1}
+  ]});
+  const cam = new p5wgex.PerspectiveCamera({
+    w:width, h:height, eye:[20,0,0], top:[0,0,1]
+  });
+  const CC = new p5wgex.CameraController(this.canvas, {dblclick:true});
+  CC.setParam({rotationMode:"free"});
+  CC.registCamera("cam", cam);
+  LS = new p5wgex.StandardLightingSystem(_node);
+  LS.initialize();
+  LS.addAttr("vec3", "aInstancePosition");
+  LS.addAttr("vec4", "aInstanceColor");
+  LS.addVarying("vec4", "vInstanceColor");
+  LS.addCode(`
+    position += aInstancePosition;
+    vInstanceColor = aInstanceColor;
+  `, "preProcess", "vs");
+  LS.addCode(`
+    color = vInstanceColor;
+  `, "preProcess", "fs");
+  LS.registPainter("spheres");
+  LS.setController(CC);
+
+  pfc = new p5wgex.PerformanceChecker(this.canvas);
+}
+
+function draw() {
+  LS.update();
+  _node.clear(0);
+  _node.use("spheres", "sphere");
+  LS.setLight({
+    useSpecular:true
+  });
+  LS.setDirectionalLight({
+    count:1,
+    direction:[0,0,-1]
+  });
+  LS.setLightingUniforms({cameraBase:true});
+  LS.setTransform().setMatrixUniforms();
+
+  _node.bindIBO("sphereIBO").drawElementsInstanced("triangles", {instanceCount:INSTANCE_COUNT});
+  _node.unbind().flush();
+
+  pfc.update();
+}
+
+
+function rdm(){
+  return Math.random();
+}
+
+function getRandom3D(){
+  const u = rdm();
+  const t = acos(1-2*u);
+  const s = Math.PI*2*rdm();
+  const z = Math.cos(t);
+  const x = Math.sin(t)*Math.cos(s);
+  const y = Math.sin(t)*Math.sin(s);
+  return new p5wgex.Vec3(x,y,z);
+}
+```
+
 うん  
 glsl書くのが楽しい人でないと使えないやこれ  
 ごめんなさい  
