@@ -238,3 +238,26 @@ glsl書くのが楽しい人でないと使えないやこれ
 
 p5でできることばっかやっても仕方ないので、こっちでないとできないインスタンシングの作例を追加しました。  
 やり方は簡単で、attrの指定時にdivisorを用意するだけです。あとドローコールの際にインスタンスカウントを指示するのとそれ用の関数が要ります。あとは内部仕様がよろしくやってくれます。
+
+renderGradation  
+```js
+function setup() {
+  createCanvas(400, 400, WEBGL);
+
+  const _node = new p5wgex.RenderNode(this._renderer.GL);
+  _node.renderGradation({
+    from:{x:0,y:0}, to:{x:1,y:1},stops:[0,0.49,0.5,0.51,1],
+    colors:["black","navy","white","navy","black"]
+  });
+  _node.renderGradation({
+    from:{x:0,y:1}, to:{x:1,y:0},stops:[0,0.49,0.5,0.51,1],
+    colors:["black","teal","white","teal","black"]
+  },{blend:"screen"});
+}
+
+```
+実行結果  
+
+![hhh](https://github.com/user-attachments/assets/3c366ab9-d843-44bb-b13b-4eace9a3464a)
+
+
