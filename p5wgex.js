@@ -130,6 +130,10 @@
 // あとsetUniformでvec3の場合に限り、Vec3とVec3Arrayを許すことにしました。
 // いちいちtoArray()するのめんどくさいんで。
 
+// 20241028
+// lightingまわりについて改善、仕様変更
+// noLightを廃止
+
 /*
 外部から上書きするメソッドの一覧
 pointerPrototype:
@@ -3103,11 +3107,11 @@ const p5wgex = (function(){
       const r = _getValidation(a, b, c);
       return this.x * r.x + this.y * r.y + this.z * r.z;
     }
-    mag(v){
+    mag(){
       // いわゆる大きさ。自分の二乗のルート。
       return Math.sqrt(this.dot(this));
     }
-    magSq(v){
+    magSq(){
       // sqrtだと重い場合に大きさの0判定だけしたい場合などに使う。
       return this.dot(this);
     }
@@ -3265,6 +3269,22 @@ const p5wgex = (function(){
 
       return this;
     }
+    angleBetween(v){
+      // vとのなす角（絶対値）
+      const crossMag = this.copy().cross(v).mag();
+      const dotValue = this.dot(v);
+      const theta = Math.atan2(crossMag, dotValue);
+      return theta;
+    }
+    angleTo(v, a=0, b=0, c=1){
+      // axisの先っちょから見た場合のvとのなす角（符号付き）
+      // PI以内ですね。PIを超えると逆方向です。
+      // 便宜上signが負でない場合はすべて1とします。
+      const axis = _getValidation(a,b,c);
+      const sign = Math.sign(this.copy().cross(v).dot(axis)); // ベクトル三重積
+      const theta = this.angleBetween(v);
+      return (sign < 0 ? sign : 1) * theta;
+    }
     static add(v1, v2){
       return v1.copy().add(v2);
     }
@@ -3304,11 +3324,17 @@ const p5wgex = (function(){
     static multMat4(v, mat4, w){
       return v.copy().multMat4(mat4, w);
     }
+    static angleBetween(v, w){
+      return v.angleBetween(w);
+    }
+    static angleTo(v, w, a, b, c){
+      return v.angleTo(w, a, b, c);
+    }
   }
 
   // Vec3生成関数
-  function createVec3(){
-    return new Vec3(0, 0, 0);
+  function createVec3(x, y, z){
+    return new Vec3(x, y, z);
   }
   // 生成関数にバリエーションがあるといいかもしれない
 
@@ -9084,7 +9110,8 @@ const p5wgex = (function(){
         vGlobalNormal = normalize(uModelNormalMatrix * normal);
         vViewNormal = normalize(uNormalMatrix * normal);
 
-        gl_Position = uProjMatrix * viewModelPosition;
+        vec4 normalDeviceCoordinate = uProjMatrix * viewModelPosition; // あった方が便利なので
+        gl_Position = normalDeviceCoordinate;
       `;
       this.vs.postProcess = ``;
 
@@ -9996,25 +10023,8 @@ const p5wgex = (function(){
         target[i].set(properValue[i]);
       }
       // targetの各成分を行列で...
-      //const cam = this.curCam.cam;
-      //const viewMat = cam.getViewMat();
-      // cameraBaseをtrueにするとこの処理が行われず、カメラ座標での値となる
-      // たとえば(0,0,-1)にすれば常にカメラ方向からの照射となり、
-      // いちいちfrontとか取らずに済む。もちろん従来のやり方も使える。デフォルトはオフ。
       // ここでやっちゃうとライトの設定そのままでカメラだけ変えるときに困るんで（具体的にはキュービックカメラワーク）
       // 実行はsetLightingUniforms()でやりましょう
-      /*
-      if(!cameraBase){
-        for(const v of target){
-          // directionの場合とlocationの場合で適用方法が異なる
-          if(_key === "direction"){
-            v.multMat4(viewMat, 0);
-          }else{
-            v.multMat4(viewMat, 1);
-          }
-        }
-      }
-      */
     }
     // directionalLight.
     setDirectionalLight(params = {}){
@@ -10052,18 +10062,6 @@ const p5wgex = (function(){
       }
       //if (this.spotLightParams.count > 0) { this.spotLightParams.use = true; }
     }
-    /*
-    lightOn(){
-      // 即時的に切り替える処理にする
-      this.lightingParams.use = true;
-      this.node.setUniform("uUseLight", this.lightingParams.use);
-      return this;
-    }
-    lightOff(){
-      this.lightingParams.use = false;
-      this.node.setUniform("uUseLight", this.lightingParams.use);
-      return this;
-    }*/
     setFlag(flag){
       // フラグの切り替えめんどくさいんだよ
       this.node.setUniform("uMaterialFlag", flag);
