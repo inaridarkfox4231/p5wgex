@@ -263,6 +263,30 @@ function setup() {
 ```
 実行結果  
 
-![hhh](https://github.com/user-attachments/assets/3c366ab9-d843-44bb-b13b-4eace9a3464a)
+![hhh](https://github.com/user-attachments/assets/3c366ab9-d843-44bb-b13b-4eace9a3464a)  
+
+必要になったのでangleToとangleBetweenを導入しました。  
+語感からangleBetweenで絶対値、angleToで符号付きとしました。  
+まあ符号付きの値もそれなりに役に立つので。  
+関数を分けるのは可読性のためという側面が大きいです。  
+保守性は問題にならないでしょう。こんな短いんだから。  
+```js
+  angleBetween(v){
+    // vとのなす角（絶対値）
+    const crossMag = this.copy().cross(v).mag();
+    const dotValue = this.dot(v);
+    const theta = Math.atan2(crossMag, dotValue);
+    return theta;
+  }
+  angleTo(v, a=0, b=0, c=1){
+    // axisの先っちょから見た場合のvとのなす角（符号付き）
+    // PI以内ですね。PIを超えると逆方向です。
+    // 便宜上signが負でない場合はすべて1とします。
+    const axis = _getValidation(a,b,c);
+    const sign = Math.sign(this.copy().cross(v).dot(axis)); // ベクトル三重積
+    const theta = this.angleBetween(v);
+    return (sign < 0 ? sign : 1) * theta;
+  }
+```
 
 
