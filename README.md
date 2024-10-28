@@ -223,7 +223,7 @@ function rdm(){
 
 function getRandom3D(){
   const u = rdm();
-  const t = acos(1-2*u);
+  const t = Math.acos(1-2*u);
   const s = Math.PI*2*rdm();
   const z = Math.cos(t);
   const x = Math.sin(t)*Math.cos(s);
