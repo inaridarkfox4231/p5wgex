@@ -133,6 +133,24 @@
 // 20241028
 // lightingまわりについて改善、仕様変更
 // noLightを廃止
+// forwardLight:~~~などの無駄な記述の必要性を解消しました
+// angleTo,angleBetweenを実装。angleToは方向考慮、angleBetweenは絶対値のみ。
+// angleToは軸を引数に取りその軸のてっぺんから見た時の角度の変化を返す
+// uViewMatをfsで使うのをやめた。setLightingUniformsでcameraBaseをtrueにするとカメラベースでuniform登録される
+// normalDeviceCoordinateという変数を用意。鏡面描画とかで使えそう。
+
+// 20241103
+// 今後の更新予定
+// ++fisceToyBoxから大量移住
+// ++modifiableTube,createAxisSystem
+// ++曲線からメッシュのメソッドをより使いやすく（ベジエの繋ぎ合わせとかでもいけるように）
+// ++loading関連
+// 以下は余裕があれば。おそらく実行されないが.......webgl-waterが忙しいので。
+// --canvas生成関連
+// --drawLoop関連
+// --textをキャンバスに置くメソッドを独自に用意、formatが作れるように。そんなところ
+// ...
+// PBRが入ってないのはいつでもできるから。デモもうできてるし。
 
 /*
 外部から上書きするメソッドの一覧
@@ -1298,7 +1316,7 @@ const p5wgex = (function(){
   // 新規の場合のみSystemがtrueを返すのでalertが発生する。2回目以降の場合は何も起きない。
   function myAlert(_string, properErrorString = ""){
     if (foxDriveErrorSystem.throwError(_string, properErrorString)) {
-      window.alert(_string);
+      window.console.error(_string);
     }
   }
 
@@ -1638,6 +1656,11 @@ const p5wgex = (function(){
       }
     }
     return [1,1,1,1]; // default is white.
+  }
+
+  // 長さ3のrgb形式もあった方がいいよねって話。PBR実装するにあたり用意しました。
+  function coulour3(...args){
+    return coulour(...args).slice(0, 3);
   }
 
   // coulourの出力であるRGBA(0～1)をcssのrgb表記にコンバートするための関数
@@ -4820,125 +4843,6 @@ const p5wgex = (function(){
     return new Geometry();
   }
   // 生成関数にバリエーションがあるといいかもしれない
-
-  // 立方体
-  // まあキューブマップ使いましょうね
-  /*
-  function getCubeMesh(_size = 1){
-    // 上の方の正方形がxMinusでその下にzPlus,xPlus,zMinusと続く
-    // zPlusの左側がyMinusで、zPlusの右側がyPlusです。
-    // つまり十字のクロスしたところにzPlusが来て下にxPlus,右にyPlusというイメージ。
-    const v=[-1,-1,-1, -1,1,-1, -1,-1,1, -1,1,1, // x-minus
-             -1,-1,1, -1,1,1, 1,-1,1, 1,1,1, // z-plus
-             1,-1,1, 1,1,1, 1,-1,-1, 1,1,-1, // x-plus
-             1,-1,-1, 1,1,-1, -1,-1,-1, -1,1,-1, // z-minus
-             -1,-1,-1, -1,-1,1, 1,-1,-1, 1,-1,1, // y-minus
-             -1,1,1, -1,1,-1, 1,1,1, 1,1,-1] // y-plus.
-    for(let i=0; i<v.length; i++) { v[i] *= _size; }
-    const f = [0,2,3, 0,3,1, 4,6,7, 4,7,5, 8,10,11, 8,11,9, 12,14,15, 12,15,13, 16,18,19, 16,19,17, 20,22,23, 20,23,21];
-    const n = getNormals(v, f);
-    const createUV = (a,b) => { return [a, b, a+0.25, b, a, b+0.25, a+0.25, b+0.25]; }
-    const uv = [];
-    uv.push(...createUV(0.375, 0));
-    uv.push(...createUV(0.375, 0.25));
-    uv.push(...createUV(0.375, 0.5));
-    uv.push(...createUV(0.375, 0.75));
-    uv.push(...createUV(0.125, 0.25));
-    uv.push(...createUV(0.625, 0.25));
-    return {v, f, n, uv};
-  }
-
-  // 雑。z軸に平行な平面。
-  function getPlaneMesh(_size = 1){
-    const v = [-1,-1,0, 1,-1,0, -1,1,0, 1,1,0];
-    for(let i=0; i<_size; i++) { v[i] *= _size; }
-    const uv = [0, 1, 1, 1, 0, 0, 1, 0];
-    const f = [0, 1, 2, 2, 1, 3];
-    const n = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
-    return {v, f, n, uv};
-  }
-
-  // UVめんどくさいな
-  // 頂点を重複させればいい
-  function getSphereMesh(_size = 1){
-    const r = _size;
-    const ds = 32;
-    const dt = 48;
-    const v = [];
-    let n = [];
-    const f = [];
-    const uv = []; // ディテールでUVを張る
-
-    // 頂点は重複させる
-    for(let k=0; k<=ds; k++){
-      const theta = Math.PI*k/ds;
-      for(let m=0; m<=dt; m++){
-        const phi = 2*Math.PI*m/dt;
-        v.push(
-          r*sin(theta)*cos(phi), r*sin(theta)*sin(phi), r*cos(theta)
-        );
-        n.push(
-          sin(theta)*cos(phi), sin(theta)*sin(phi), cos(theta)
-        );
-        uv.push(m/dt, k/ds);
-      }
-    }
-
-    for(let k=0; k<ds; k++){
-      // 平面と同じようにする
-      for(let m=0; m<dt; m++){
-        const leftUp = k*(dt+1) + m;
-        const leftDown = (k+1)*(dt+1) + m;
-        const rightUp = leftUp+1;
-        const rightDown = leftDown+1;
-        f.push(leftUp, leftDown, rightDown, leftUp, rightDown, rightUp);
-      }
-    }
-
-    return {v, f, n, uv};
-  }
-
-  function getTorusMesh(a=1.0, b=0.4){
-    // 今回はトーラスで。紙の上で計算してるけどロジックは難しくないのよ。
-    const ds = 32;
-    const dt = 32;
-    const v = [];
-    const n = [];
-    const uv = [];
-    const f = [];
-    const dTheta = Math.PI*2/ds;
-    const dPhi = Math.PI*2/dt;
-    // イメージ的にはkがx軸でlがy軸で原点左下の座標系を考えている
-    // この原点はx軸aでz軸bの点で、そこから右と上にxとyをそれぞれ伸ばす感じ。
-    for(let l=0; l<=dt; l++){
-      for(let k=0; k<=ds; k++){
-        const index = (dt+1)*l + k;
-        const px = Math.cos(dPhi*l);
-        const py = Math.sin(dPhi*l);
-        const nx = Math.sin(dTheta*k)*px;
-        const ny = Math.sin(dTheta*k)*py;
-        const nz = Math.cos(dTheta*k);
-        const x = a*px + b*nx;
-        const y = a*py + b*ny;
-        const z = b*nz;
-        v.push(x, y, z);
-        n.push(nx, ny, nz);
-        uv.push((k+1)/ds, (l+1)/dt);
-      }
-    }
-    // kとlに着目すると分かりやすいかもしれない。
-    for(let l=0; l<dt; l++){
-      for(let k=0; k<ds; k++){
-        const index = dt*l + k;
-        f.push(
-          l*(ds+1) + k, l*(ds+1) + k+1, (l+1)*(ds+1) + k+1,
-          l*(ds+1) + k, (l+1)*(ds+1) + k+1, (l+1)*(ds+1) + k
-        );
-      }
-    }
-    return {v, f, n, uv};
-  }
-  */
 
   // v, n, uv, fは予約されているとする。
   // 他にも使いたい場合は配列の形で付加的に用意する。
@@ -8387,7 +8291,6 @@ const p5wgex = (function(){
         void applyDirectionalLight(vec3 direction, vec3 diffuseColor, vec3 specularColor,
                                    vec3 modelPosition, vec3 normal, inout vec3 diffuse, inout vec3 specular){
           vec3 viewDirection = normalize(-modelPosition);
-          //vec3 lightVector = (uViewMatrix * vec4(direction, 0.0)).xyz;
           vec3 lightVector = direction;
           vec3 lightDir = normalize(lightVector);
           // 色計算
@@ -8404,7 +8307,6 @@ const p5wgex = (function(){
         void applyPointLight(vec3 location, vec3 diffuseColor, vec3 specularColor,
                              vec3 modelPosition, vec3 normal, inout vec3 diffuse, inout vec3 specular){
           vec3 viewDirection = normalize(-modelPosition);
-          //vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz;
           vec3 lightPosition = location;
           vec3 lightVector = modelPosition - lightPosition;
           vec3 lightDir = normalize(lightVector);
@@ -8426,7 +8328,6 @@ const p5wgex = (function(){
         void applySpotLight(vec3 location, vec3 direction, float angle, float conc, vec3 diffuseColor, vec3 specularColor,
                             vec3 modelPosition, vec3 normal, inout vec3 diffuse, inout vec3 specular){
           vec3 viewDirection = normalize(-modelPosition);
-          //vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz; // locationは光の射出位置
           vec3 lightPosition = location;
           vec3 lightVector = modelPosition - lightPosition; // 光源 → モデル位置
           vec3 lightDir = normalize(lightVector);
@@ -8435,7 +8336,6 @@ const p5wgex = (function(){
           float lightFalloff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
           // falloffは光それ自身の減衰で、これに加えてspot（angleで定義されるcone状の空間）からのずれによる減衰を考慮
           float spotFalloff;
-          //vec3 lightDirection = (uViewMatrix * vec4(direction, 0.0)).xyz;
           vec3 lightDirection = direction;
           // lightDirはモデルに向かうベクトル、lightDirectionはスポットライトの向きとしての光の向き。そこからのずれで減衰させる仕組み。
           float spotDot = dot(lightDir, normalize(lightDirection));
@@ -8485,6 +8385,131 @@ const p5wgex = (function(){
           result *= materialColor;
           result += specular;
           return result;
+        }
+      `,
+    pbrLightingRoutines:
+      `
+        // 光が届くときにtrueを返す。pointLightとspotLightで使う
+        bool testLightInRange(const in float lightDistance, const in float cutoffDistance) {
+          return any(bvec2(cutoffDistance == 0.0, lightDistance < cutoffDistance));
+        }
+
+        // 減衰を調べるコード
+        // 当然だが平行光に減衰の概念は適用されない
+        float punctualLightIntensityToIrradianceFactor(const in float lightDistance, const in float cutoffDistance, const in float decayExponent) {
+          if (decayExponent > 0.0) {
+            return pow(saturate(-lightDistance / cutoffDistance + 1.0), decayExponent);
+          }
+
+          return 1.0;
+        }
+
+        // 平行光の放射照度ファクター
+        // 平行なので必ず届くし、色と方向があるだけ。
+        void getDirectionalDirectLightIrradiance(const in DirectionalLight directionalLight, const in GeometricContext geometry, out IncidentLight directLight) {
+          directLight.color = directionalLight.color;
+
+          directLight.direction = directionalLight.direction;
+
+          directLight.visible = true;
+        }
+
+        // 点光源の放射照度ファクター
+        // 位置により届くかどうかや減衰の度合いが決まる
+        // より点光源らしいふるまいとなっている
+        void getPointDirectLightIrradiance(const in PointLight pointLight, const in GeometricContext geometry, out IncidentLight directLight) {
+          vec3 L = pointLight.position - geometry.position;
+          directLight.direction = normalize(L);
+
+          float lightDistance = length(L);
+          if (testLightInRange(lightDistance, pointLight.distance)) {
+            directLight.color = pointLight.color;
+            directLight.color *= punctualLightIntensityToIrradianceFactor(lightDistance, pointLight.distance, pointLight.decay);
+            directLight.visible = true;
+          } else {
+            directLight.color = vec3(0.0);
+            directLight.visible = false;
+          }
+        }
+
+        // coneCosで0, penumbraCosで1ですね。間で0～1ですね。つまり充分傘の内側に
+        // 居れば1だということ。
+
+        void getSpotDirectLightIrradiance(const in SpotLight spotLight, const in GeometricContext geometry, out IncidentLight directLight) {
+          vec3 L = spotLight.position - geometry.position;
+          directLight.direction = normalize(L);
+
+          float lightDistance = length(L);
+          float angleCos = dot(directLight.direction, spotLight.direction);
+
+          if (all(bvec2(angleCos > spotLight.coneCos, testLightInRange(lightDistance, spotLight.distance)))) {
+            float spotEffect = smoothstep(spotLight.coneCos, spotLight.penumbraCos, angleCos);
+            directLight.color = spotLight.color;
+            directLight.color *= spotEffect * punctualLightIntensityToIrradianceFactor(lightDistance, spotLight.distance, spotLight.decay);
+            directLight.visible = true;
+          } else {
+            directLight.color = vec3(0.0);
+            directLight.visible = false;
+          }
+        }
+
+        // BRDF関連のルーチン群
+
+        // Normalized Lambert
+        vec3 DiffuseBRDF(vec3 diffuseColor) {
+          return diffuseColor / MATH_PI;
+        }
+
+        vec3 F_Schlick(vec3 specularColor, vec3 H, vec3 V) {
+          return (specularColor + (1.0 - specularColor) * pow(1.0 - saturate(dot(V,H)), 5.0));
+        }
+
+        float D_GGX(float a, float dotNH) {
+          float a2 = a*a;
+          float dotNH2 = dotNH*dotNH;
+          float d = dotNH2 * (a2 - 1.0) + 1.0;
+          return a2 / (MATH_PI * d * d);
+        }
+
+        float G_Smith_Schlick_GGX(float a, float dotNV, float dotNL) {
+          float k = a*a*0.5 + MATH_EPSILON;
+          float gl = dotNL / (dotNL * (1.0 - k) + k);
+          float gv = dotNV / (dotNV * (1.0 - k) + k);
+          return gl*gv;
+        }
+
+        // Cook-Torrance
+        vec3 SpecularBRDF(const in IncidentLight directLight, const in GeometricContext geometry, vec3 specularColor, float roughnessFactor) {
+
+          vec3 N = geometry.normal;
+          vec3 V = geometry.viewDir;
+          vec3 L = directLight.direction;
+
+          float dotNL = saturate(dot(N,L));
+          float dotNV = saturate(dot(N,V));
+          vec3 H = normalize(L+V);
+          float dotNH = saturate(dot(N,H));
+          float dotVH = saturate(dot(V,H));
+          float dotLV = saturate(dot(L,V));
+          float a = roughnessFactor * roughnessFactor;
+
+          float D = D_GGX(a, dotNH);
+          float G = G_Smith_Schlick_GGX(a, dotNV, dotNL);
+          vec3 F = F_Schlick(specularColor, V, H);
+          return (F*(G*D))/(4.0*dotNL*dotNV+MATH_EPSILON);
+        }
+
+        // RenderEquations(RE)
+        void RE_Direct(const in IncidentLight directLight, const in GeometricContext geometry, const in Material material, inout ReflectedLight reflectedLight) {
+
+          float dotNL = saturate(dot(geometry.normal, directLight.direction));
+          vec3 irradiance = dotNL * directLight.color;
+
+          // punctual light
+          irradiance *= MATH_PI;
+
+          reflectedLight.directDiffuse += irradiance * DiffuseBRDF(material.diffuseColor);
+          reflectedLight.directSpecular += irradiance * SpecularBRDF(directLight, geometry, material.specularColor, material.specularRoughness);
         }
       `,
     hsv2rgb:
@@ -8822,6 +8847,10 @@ const p5wgex = (function(){
     },
     filter:{
       // filter一覧
+    },
+    transform:{
+      // transform一覧。ところでrotateは行列取得がいい。適用だと法線も同じことするので二度手間になる。
+      // 場合によっては軸成分だけ分離すると異なる角度に適用するときの計算量が減る...まあいいや
     }
   }
 
@@ -9062,26 +9091,23 @@ const p5wgex = (function(){
     }
   }
 
-  class ForwardLightingShader extends ShaderPrototype{
+  // 3D描画のプロトタイプ(Lineとかもこれの派生とする)
+  // vsでpositionを用意するところ、あとcolor,texture,fogに関する処理がかぶってるんで
+  // そこら辺ですね. まとめようかと。
+  class Shader3DPrototype extends ShaderPrototype{
     constructor(node){
       super(node);
     }
-    initialize(options = {}){
-      const {useLight = true} = options; // これがfalseの場合、ライティング関連のコードはカットされる
+    initialize(){
       super.initialize();
       this.attrs = [
-        {type:"vec3", name:"aPosition"},
-        {type:"vec3", name:"aNormal"}
+        {type:"vec3", name:"aPosition"}
       ];
       this.varyings = [
         {type:"vec3", name:"vLocalPosition"},
         {type:"vec3", name:"vGlobalPosition"},
-        {type:"vec3", name:"vViewPosition"},
-        {type:"vec3", name:"vLocalNormal"}, // ローカル法線。aNormalそのまま。法線彩色で使う。球のマッピングなど。
-        {type:"vec3", name:"vGlobalNormal"}, // グローバル法線。環境マッピングで使う。
-        {type:"vec3", name:"vViewNormal"} // ビュー法線。ライティングで使う。
+        {type:"vec3", name:"vViewPosition"}
       ];
-
       this.vs.precisions = ``;
       this.vs.constants = ``;
       this.vs.uniforms =
@@ -9089,15 +9115,11 @@ const p5wgex = (function(){
         uniform mat4 uModelMatrix;
         uniform mat4 uModelViewMatrix;
         uniform mat4 uProjMatrix;
-        uniform mat3 uNormalMatrix;
-        uniform mat3 uModelNormalMatrix;
       `;
-
       this.vs.routines = ``;
       this.vs.preProcess =
       `
         vec3 position = aPosition;
-        vec3 normal = aNormal;
       `;
       this.vs.mainProcess =
       `
@@ -9106,9 +9128,7 @@ const p5wgex = (function(){
         vGlobalPosition = (uModelMatrix * vec4(position, 1.0)).xyz;
         vec4 viewModelPosition = uModelViewMatrix * vec4(position, 1.0);
         vViewPosition = viewModelPosition.xyz;
-        vLocalNormal = aNormal; // aNormalですね。頂点と紐ついてる値じゃないとtransformで変わってしまう。
-        vGlobalNormal = normalize(uModelNormalMatrix * normal);
-        vViewNormal = normalize(uNormalMatrix * normal);
+        // 法線関連はあとで加えるので
 
         vec4 normalDeviceCoordinate = uProjMatrix * viewModelPosition; // あった方が便利なので
         gl_Position = normalDeviceCoordinate;
@@ -9119,6 +9139,77 @@ const p5wgex = (function(){
       `
         precision highp float;
       `;
+      // fsのpostProcessは個別でいいや
+      // 共通に書けるのはせいぜいこのくらい。あとは個別処理に任せましょ。
+    }
+    addColorUsage(){
+      // TODO
+      this.addAttr("vec4", "aColor");
+      this.addVarying("vec4", "vColor");
+      this.addCode(`
+        vec4 color = aColor;
+      `, "preProcess", "vs");
+      this.addCode(`
+        vColor = color;
+      `, "postProcess", "vs");
+    }
+    addTextureUsage(){
+      // TODO
+      this.addAttr("vec2", "aTexCoord");
+      this.addVarying("vec2", "vTexCoord");
+      this.addCode(`
+        vec2 texCoord = aTexCoord;
+      `, "preProcess", "vs");
+      this.addCode(`
+        vTexCoord = texCoord;
+      `, "postProcess", "vs");
+    }
+    addFogUsage(){
+      this.addVarying("vec4", "vNDCForFog");
+      this.addCode(`
+        vNDCForFog = normalDeviceCoordinate;
+      `, "postProcess", "vs");
+      this.addUniform("vec2", "uFogParams", "fs"); // x:Near, y:Far
+      this.addCode(`
+        float depth = 0.5 + 0.5 * vNDCForFog.z/vNDCForFog.w;
+        float depthAlpha = smoothstep(uFogParams.y, uFogParams.x, depth);
+        color *= vec4(depthAlpha);
+        fragColor = color;
+      `, "postProcess", "fs");
+    }
+  }
+
+  // LightingShaderは一つ前を用意してまとめた方がいいかもしれない
+  class ForwardLightingShader extends Shader3DPrototype{
+    constructor(node){
+      super(node);
+    }
+    initialize(options = {}){
+      const {useLight = true} = options; // これがfalseの場合、ライティング関連のコードはカットされる
+      super.initialize();
+      // 法線が無くても描画には困らないということ...あったら便利だけど。
+
+      this.addAttr("vec3", "aNormal");
+
+      this.addVarying("vec3", "vLocalNormal"); // ローカル法線。aNormalそのまま。法線彩色で使う。球のマッピングなど。
+      this.addVarying("vec3", "vGlobalNormal"); // グローバル法線。環境マッピングで使う。
+      this.addVarying("vec3", "vViewNormal"); // ビュー法線。ライティングで使う。
+
+      this.addUniform("mat3", "uNormalMatrix", "vs");
+      this.addUniform("mat3", "uModelNormalMatrix", "vs");
+
+      this.addCode(
+      `
+        vec3 normal = aNormal;
+      `, "preProcess", "vs");
+
+      this.addCode(
+      `
+        vLocalNormal = aNormal; // aNormalですね。頂点と紐ついてる値じゃないとtransformで変わってしまう。
+        vGlobalNormal = normalize(uModelNormalMatrix * normal);
+        vViewNormal = normalize(uNormalMatrix * normal);
+      `, "mainProcess", "vs");
+
       if (useLight) {
         // ...この数値もいい加減使うのやめたいです。まあ難しいけど。
         this.fs.constants =
@@ -9142,8 +9233,6 @@ const p5wgex = (function(){
       if (useLight) {
         this.fs.uniforms +=
         `
-          //uniform mat4 uViewMatrix; // 廃止
-
           // 汎用色
           uniform vec3 uAmbientColor;
           uniform float uShininess; // specularに使う、まあこれが大きくないと見栄えが悪いのです。光が集中する。
@@ -9204,6 +9293,7 @@ const p5wgex = (function(){
       // もし透明度でなんかやりたいなら
       // uMonoColorあるいは独自ユニフォームで透明度を渡して
       // mainProcessのあとでrgbにaを掛けるとかなんかそういうことをすればいいですね
+      // postProcessは個別で。
       this.fs.postProcess =
       `
         fragColor = color;
@@ -9213,95 +9303,48 @@ const p5wgex = (function(){
       // vsPostProcessでvColor = color;みたいにできる。
       // texCoordでも同じことができる
       // colorを使う場合はaColorを追加.
-      const {useColor = false} = options;
-      const {useTexCoord = false} = options;
-      if (useColor) {
-        // TODO
-        this.addAttr("vec4", "aColor");
-        this.addVarying("vec4", "vColor");
-        this.addCode(`
-          vec4 color = aColor;
-        `, "preProcess", "vs");
-        this.addCode(`
-          vColor = color;
-        `, "postProcess", "vs");
-      }
-      if (useTexCoord) {
-        // TODO
-        this.addAttr("vec2", "aTexCoord");
-        this.addVarying("vec2", "vTexCoord");
-        this.addCode(`
-          vec2 texCoord = aTexCoord;
-        `, "preProcess", "vs");
-        this.addCode(`
-          vTexCoord = texCoord;
-        `, "postProcess", "vs");
-      }
+      // fogを使う場合の処理を新たに追加
+      const {useColor = false, useTexCoord = false, useFog = false} = options;
+      if (useColor) { this.addColorUsage(); }
+      if (useTexCoord) { this.addTextureUsage(); }
+      if (useFog) { this.addFogUsage(); }
       return this;
     }
   }
 
   // MRT前提のディファード用シェーダ
-  class DeferredPrepareShader extends ShaderPrototype{
+  class DeferredPrepareShader extends Shader3DPrototype{
     constructor(node){
       super(node);
     }
     initialize(options = {}){
       super.initialize();
-      this.attrs = [
-        {type:"vec3", name:"aPosition"},
-        {type:"vec3", name:"aNormal"}
-      ];
-      this.varyings = [
-        {type:"vec3", name:"vLocalPosition"},
-        {type:"vec3", name:"vGlobalPosition"},
-        {type:"vec3", name:"vViewPosition"},
-        {type:"vec3", name:"vLocalNormal"}, // ローカル法線。aNormalそのまま。法線彩色で使う。球のマッピングなど。
-        {type:"vec3", name:"vGlobalNormal"}, // グローバル法線。環境マッピングで使う。
-        {type:"vec3", name:"vViewNormal"}, // ビュー法線。ライティングで使う。
-        {type:"vec4", name:"vNormalDeviceCoord"} // いわゆるNDC.
-      ];
 
-      this.vs.precisions = ``;
-      this.vs.constants = ``;
-      this.vs.uniforms =
-      `
-        uniform mat4 uModelMatrix;
-        uniform mat4 uModelViewMatrix;
-        uniform mat4 uProjMatrix;
-        uniform mat3 uNormalMatrix;
-        uniform mat3 uModelNormalMatrix;
-      `;
+      this.addAttr("vec3", "aNormal");
 
-      this.vs.routines = ``;
-      this.vs.preProcess =
+      this.addVarying("vec3", "vLocalNormal"); // ローカル法線。aNormalそのまま。法線彩色で使う。球のマッピングなど。
+      this.addVarying("vec3", "vGlobalNormal"); // グローバル法線。環境マッピングで使う。
+      this.addVarying("vec3", "vViewNormal"); // ビュー法線。ライティングで使う。
+      this.addVarying("vec4", "vNormalDeviceCoord"); // いわゆるNDC.
+
+      this.addUniform("mat3", "uNormalMatrix", "vs");
+      this.addUniform("mat3", "uModelNormalMatrix", "vs");
+
+      this.addCode(
       `
-        vec3 position = aPosition;
         vec3 normal = aNormal;
-      `;
+      `, "preProcess", "vs");
 
-      this.vs.mainProcess =
+      // ndcがnormalDeviceCoordinateに名前変わっちゃうけどいいよね
+      this.addCode(
       `
-        // 位置と法線の計算
-        vLocalPosition = aPosition; // aPositionの方が適切だろ. 改変後のpositionをそのまま使うメリットあんまない
-        vGlobalPosition = (uModelMatrix * vec4(position, 1.0)).xyz;
-        vec4 viewModelPosition = uModelViewMatrix * vec4(position, 1.0);
-        vViewPosition = viewModelPosition.xyz;
         vLocalNormal = aNormal; // aNormalですね。頂点と紐ついてる値じゃないとtransformで変わってしまう。
         vGlobalNormal = normalize(uModelNormalMatrix * normal);
         vViewNormal = normalize(uNormalMatrix * normal);
-
-        vec4 ndc = uProjMatrix * viewModelPosition;
-        gl_Position = ndc;
-        vNormalDeviceCoord = ndc;
-      `;
-      this.vs.postProcess = ``;
+        vNormalDeviceCoord = normalDeviceCoordinate;
+      `, "mainProcess", "vs");
 
       // 次にfs
-      this.fs.precisions =
-      `
-        precision highp float;
-      `;
       // 名前はとりあえず固定で。変える必要が生じたら、変えます。
       // 渡すのはviewNormalです。計算に使うので。
       this.fs.outputs =
@@ -9339,7 +9382,7 @@ const p5wgex = (function(){
       // 深度とともにデータを格納していくだけでいいと思うんよ
 
       // depthがこれでいいかどうかは謎だけど...
-      this.fs.postProcess +=
+      this.fs.postProcess =
       `
         materialColor = color;
         viewPosition = vec4(position, 1.0);
@@ -9347,28 +9390,8 @@ const p5wgex = (function(){
         viewNormal = vec4(normal, depth);
       `;
       // useColor, useTexCoord
-      if (useColor) {
-        // TODO
-        this.addAttr("vec4", "aColor");
-        this.addVarying("vec4", "vColor");
-        this.addCode(`
-          vec4 color = aColor;
-        `, "preProcess", "vs");
-        this.addCode(`
-          vColor = color;
-        `, "postProcess", "vs");
-      }
-      if (useTexCoord) {
-        // TODO
-        this.addAttr("vec2", "aTexCoord");
-        this.addVarying("vec2", "vTexCoord");
-        this.addCode(`
-          vec2 texCoord = aTexCoord;
-        `, "preProcess", "vs");
-        this.addCode(`
-          vTexCoord = texCoord;
-        `, "postProcess", "vs");
-      }
+      if (useColor) { this.addColorUsage(); }
+      if (useTexCoord) { this.addTextureUsage(); }
       return this;
     }
   }
@@ -9427,8 +9450,6 @@ const p5wgex = (function(){
       if (useLight) {
         this.fs.uniforms +=
         `
-          //uniform mat4 uViewMatrix; // 廃止
-
           // 汎用色
           uniform vec3 uAmbientColor;
           uniform float uShininess; // specularに使う、まあこれが大きくないと見栄えが悪いのです。光が集中する。
@@ -9498,6 +9519,303 @@ const p5wgex = (function(){
     }
   }
 
+  // PBR. さしあたりforward. やることはほぼ一緒だがstructを使うとこなど色々異なる。
+  // デモはできてるのでぼちぼち追加していくだけ。
+  class ForwardPBRLightingShader extends Shader3DPrototype{
+    constructor(node){
+      super(node);
+    }
+    initialize(options = {}){
+      // これがfalseの場合、Lighting関連はスキップ
+      const {useLight = true} = options;
+      super.initialize();
+      this.addAttr("vec3", "aNormal");
+
+      this.addVarying("vec3", "vLocalNormal"); // ローカル法線。aNormalそのまま。法線彩色で使う。球のマッピングなど。
+      this.addVarying("vec3", "vGlobalNormal"); // グローバル法線。環境マッピングで使う。
+      this.addVarying("vec3", "vViewNormal"); // ビュー法線。ライティングで使う。
+      // この辺は共通、というか違うのLightingのとこだけだし。
+
+      this.addUniform("mat3", "uNormalMatrix", "vs");
+      this.addUniform("mat3", "uModelNormalMatrix", "vs");
+
+      // position,normalにaPosition,aNormalからの派生を使う場合ここをいじる
+
+      this.addCode(
+      `
+        vec3 normal = aNormal;
+      `, "preProcess", "vs");
+      this.addCode(
+      `
+        vLocalNormal = aNormal; // aNormalですね。頂点と紐ついてる値じゃないとtransformで変わってしまう。
+        vGlobalNormal = normalize(uModelNormalMatrix * normal);
+        vViewNormal = normalize(uNormalMatrix * normal);
+      `, "mainProcess", "vs");
+
+      // vsここまで。フォンランバートと一緒。構造体も出てこない。
+
+      // さあfsだ。
+      // ライトの個数をオプションで増やせるようにする
+      const {directionalLightCountMax = 4} = options;
+      const {pointLightCountMax = 4} = options;
+      const {spotLightCountMax = 4} = options;
+      if(useLight){
+        // lightingに使う#define群
+        this.fs.defines =
+        `
+         #define MATH_PI 3.14159265359
+         #define MATH_TAU 6.28318530718
+         #define MATH_EPSILON 1e-6
+         #define saturate(a) clamp( a, 0.0, 1.0 ) // 計算で使う
+
+         #define DIRECTIONAL_LIGHT_MAX ${directionalLightCountMax}
+         #define POINT_LIGHT_MAX ${pointLightCountMax}
+         #define SPOT_LIGHT_MAX ${spotLightCountMax}
+        `;
+      }
+      // 構造体
+      // geometryも含めてnoLightの場合使わないだろ...
+      // 基本noLightでは6種のvaryingが活躍するので。
+      // というわけでこれもuseLight:trueの場合のみ用意する。
+      if(useLight){
+        this.fs.structs =
+        `
+          // 入射光
+          struct IncidentLight {
+            vec3 color;
+            vec3 direction;
+            bool visible;  // 光が届くときtrue
+          };
+
+          // 反射光（必要な分だけ）
+          struct ReflectedLight {
+            vec3 directDiffuse;
+            vec3 directSpecular;
+          };
+
+          // positionはvViewPositionそのままで
+          // normalはvViewNormalを正規化する
+          // viewDirは-positionの正規化
+          struct GeometricContext {
+            vec3 position;
+            vec3 normal;
+            vec3 viewDir;
+          };
+
+          // specularRoughnessはroughnessそのまま
+          // diffuseColorとspecularColorをmetalnessから計算する
+          struct Material {
+            vec3 diffuseColor;
+            vec3 specularColor;
+            float specularRoughness;
+          };
+          // 平行光
+          struct DirectionalLight {
+            vec3 direction;
+            vec3 color;
+          };
+
+          // 点光源
+          struct PointLight {
+            vec3 position;
+            vec3 color;
+            float distance;
+            float decay;  // 減衰率
+          };
+
+          // スポットライト
+          // ざっくりいうと
+          // penumbraCosまでいくとあそこが1になるんですよ
+          // coneCosぎりぎりで0ですね
+          // smoothstepってのはそういうこと
+          // なお送る前にcosに変換していますね...
+          struct SpotLight {
+            vec3 position;
+            vec3 direction;
+            vec3 color;
+            float distance;
+            float decay;
+            float coneCos;
+            float penumbraCos;
+          };
+        `;
+      }
+      // uniformはuAlbedo(vec4)とuEmissive(vec3)以外はuseLight時のみ
+      // noLightの場合はemissive + albedoにするわけ(albedo=uAlbedo.rgb);
+      // alphaでなんかしたい場合はuAlbedoの際にaにalphaかますとか...まあ、なんかする。
+      this.fs.uniforms =
+      `
+        uniform vec4 uAlbedo;
+        uniform vec3 uEmissive;
+      `;
+      if(useLight){
+        this.fs.uniforms +=
+        `
+          uniform float uMetallic;
+          uniform float uRoughness;
+
+          // punctual light 3兄弟
+          // だんご！！
+          uniform DirectionalLight uDirectionalLights[DIRECTIONAL_LIGHT_MAX];
+          uniform PointLight uPointLights[POINT_LIGHT_MAX];
+          uniform SpotLight uSpotLights[SPOT_LIGHT_MAX];
+
+          // ライトの数をユニフォーム変数として登録してるね。
+          uniform int uNumDirectionalLights;
+          uniform int uNumPointLights;
+          uniform int uNumSpotLights;
+        `;
+      }
+      this.fs.outputs =
+      `
+        out vec4 fragColor;
+      `;
+      if (useLight) { this.fs.routines = snipet.pbrLightingRoutines; }
+      // さて
+      // preProcess...
+      // 共通の処理はこんだけですね。noLightの場合はalbedoをいじってね
+      // emissiveは最後にrgbに足すだけです
+      // ライティングを使う場合でもalbedoを頂点色やテクスチャ色にすることはあるけど
+      // まあ使わないかもだけどopacityを分離しとくか（結果には適用しない）
+      // （適用するならmainProcessのaddCodeで「color」をいじる）
+      this.fs.preProcess =
+      `
+        vec3 albedo = uAlbedo.rgb;
+        vec3 emissive = uEmissive;
+      `;
+      if(useLight){
+        // ライティング用
+        this.fs.preProcess +=
+        `
+          GeometricContext geometry;
+          geometry.position = vViewPosition;
+          geometry.normal = normalize(vViewNormal);
+          geometry.viewDir = normalize(-vViewPosition);
+        `;
+      }
+      // ここまででalbedoの準備ができてるんで
+      // albedoって要するに反射能
+      // ライティングに使われる色情報的な位置づけでいいと思う（実際そういう扱いだし）
+      // emissiveはその影響を受けないということね
+      if(useLight){
+        this.fs.mainProcess =
+        `
+          // albedoが反射能、ということはmetallicが大きいほどよく反射する...
+          // 逆に非金属の度合いが強い場合...
+          // 理解は後回しで...
+          Material material;
+          material.diffuseColor = mix(albedo, vec3(0.0), uMetallic);
+          material.specularColor = mix(vec3(0.04), albedo, uMetallic);
+          material.specularRoughness = uRoughness;
+
+          // 以下、ライティング
+
+          // 入射光の構造体だけ作っておいて今からいじる
+          IncidentLight directLight;
+          // とはいえ間接的に使うだけで、resultは上記のreflectedLightだけども。
+          // 要はメソッド内で内容をいじるために存在する媒体
+          // 反射光を計算するために入射光が要るということ
+
+          // コンストラクタで初期化
+          ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0));
+
+          // directional light
+          for (int i=0; i<DIRECTIONAL_LIGHT_MAX; ++i) {
+            if (i >= uNumDirectionalLights) break;
+            getDirectionalDirectLightIrradiance(uDirectionalLights[i], geometry, directLight);
+            RE_Direct(directLight, geometry, material, reflectedLight);
+          }
+
+          // point light
+          for (int i=0; i<POINT_LIGHT_MAX; ++i) {
+            if (i >= uNumPointLights) break;
+            getPointDirectLightIrradiance(uPointLights[i], geometry, directLight);
+            if (directLight.visible) {
+              RE_Direct(directLight, geometry, material, reflectedLight);
+            }
+          }
+
+          // spot light
+          for (int i=0; i<SPOT_LIGHT_MAX; ++i) {
+            if (i >= uNumSpotLights) break;
+            getSpotDirectLightIrradiance(uSpotLights[i], geometry, directLight);
+            if (directLight.visible) {
+              RE_Direct(directLight, geometry, material, reflectedLight);
+            }
+          }
+
+          vec3 outgoingLight = emissive + reflectedLight.directDiffuse + reflectedLight.directSpecular;
+
+          vec4 color = vec4(outgoingLight, 1.0);
+        `;
+      }else{
+        // noLightの場合はemissiveに単純にalbedoを足す。emissiveのデフォルトは0です。
+        this.fs.mainProcess =
+        `
+          vec4 color = vec4(emissive + albedo, 1.0);
+        `;
+      }
+      // alphaをいじるならここ。他にもいろんなことができる。
+      // 一応ね
+      // 位置や法線でいじったりするんだろうか（知らんけど）
+      this.fs.postProcess =
+      `
+        fragColor = color;
+      `;
+      // useColor,useTexCoord,useFog案件
+      const {useColor = false, useTexCoord = false, useFog = false} = options;
+      if (useColor) { this.addColorUsage(); }
+      if (useTexCoord) { this.addTextureUsage(); }
+      if (useFog) { this.addFogUsage(); }
+      // vsで「color,texCoord」にアクセスするとそれをいじったりできるんよ。
+      // おつかれさま。
+      return this;
+    }
+  }
+
+  // lineShader. 線描画用。3Dです。カメラが必要です。
+  class LineShader extends Shader3DPrototype{
+    constructor(node){
+      super(node);
+    }
+    initialize(options = {}){
+      super.initialize();
+      this.fs.uniforms =
+      `
+        uniform vec4 uMonoColor; // monoColorの場合
+        uniform int uMaterialFlag; // 0:mono. 1以降はお好みで
+      `;
+
+      this.fs.outputs =
+      `
+        out vec4 fragColor;
+      `
+
+      this.fs.preProcess =
+      `
+        vec3 position = vViewPosition;
+        vec4 color = vec4(1.0);
+        if(uMaterialFlag == 0) {
+          color = uMonoColor;  // uMonoColor単色
+        }
+      `;
+
+      // mainProcessでrgbにaを掛けるのは廃止しました
+      // あとpostProcessに変更しましょ
+      // lightingが無いのでmainProcessでやることはないです
+      this.fs.postProcess =
+      `
+        fragColor = color;
+      `;
+
+      const {useColor = false, useFog = false} = options;
+      // colorを使う場合はaColorを追加.
+      if (useColor) { this.addColorUsage(); }
+      if (useFog) { this.addFogUsage(); }
+      return this;
+    }
+  }
+
   // -1～1にしたかったらこっちでvUv = 2.0*vUv-1.0;とかする。
   // そのほうが柔軟性高そう。
   // foxBoard使えばそのまま板ポリ芸に移行できる。
@@ -9543,93 +9861,6 @@ const p5wgex = (function(){
         `vec4 color = vec4(1.0); vec2 uv = vUv;`;
       this.fs.mainProcess =
         `fragColor = color;`;
-      return this;
-    }
-  }
-
-  // lineShader. 線描画用。3Dです。カメラが必要です。
-  class LineShader extends ShaderPrototype{
-    constructor(node){
-      super(node);
-    }
-    initialize(options = {}){
-      super.initialize();
-      this.attrs = [
-        {type:"vec3", name:"aPosition"}
-      ];
-      this.varyings = [
-        {type:"vec3", name:"vLocalPosition"},
-        {type:"vec3", name:"vGlobalPosition"},
-        {type:"vec3", name:"vViewPosition"}
-      ];
-
-      this.vs.uniforms =
-      `
-        uniform mat4 uModelMatrix;
-        uniform mat4 uModelViewMatrix;
-        uniform mat4 uProjMatrix;
-      `;
-
-      this.vs.preProcess =
-      `
-        vec3 position = aPosition;
-      `;
-      this.vs.mainProcess =
-      `
-        // 位置の計算
-        vLocalPosition = position;
-        vGlobalPosition = (uModelMatrix * vec4(position, 1.0)).xyz;
-        vec4 viewModelPosition = uModelViewMatrix * vec4(position, 1.0);
-        vViewPosition = viewModelPosition.xyz;
-
-        gl_Position = uProjMatrix * viewModelPosition;
-      `;
-
-      this.fs.precisions =
-      `
-        precision highp float;
-      `;
-
-      this.fs.uniforms =
-      `
-        uniform vec4 uMonoColor; // monoColorの場合
-        uniform int uMaterialFlag; // 0:mono. 1以降はお好みで
-      `;
-
-      this.fs.outputs =
-      `
-        out vec4 fragColor;
-      `
-
-      this.fs.preProcess =
-      `
-        vec3 position = vViewPosition;
-        vec4 color = vec4(1.0);
-        if(uMaterialFlag == 0) {
-          color = uMonoColor;  // uMonoColor単色
-        }
-      `;
-
-      this.fs.mainProcess =
-      `
-        color.rgb *= color.a;
-        fragColor = color;
-      `;
-
-      const {useColor = false} = options;
-
-      // colorを使う場合はaColorを追加.
-      if (useColor) {
-        // TODO
-        this.addAttr("vec4", "aColor");
-        this.addVarying("vec4", "vColor");
-        this.addCode(`
-          vec4 color = aColor;
-        `, "preProcess", "vs");
-        this.addCode(`
-          vColor = color;
-        `, "postProcess", "vs");
-      }
       return this;
     }
   }
@@ -9987,13 +10218,17 @@ const p5wgex = (function(){
         diffuseColor:[1, 1, 1],
         specularColor:[1, 1, 1]
       };
+      this.fogParams = {
+        near:0.88,
+        far:0.92
+      }
     }
     setLight(info = {}){
       const keys = Object.keys(info);
       for(const _key of keys){ this.lightingParams[_key] = info[_key]; }
       //this.lightingParams.use = true;
     }
-    setVectorParam(_key, target, value, cameraBase = false){
+    setVectorParam(_key, target, value){
       // this[prop][key]はベクトルの配列である
       // valueは配列を想定する
       if(!Array.isArray(value)) return;
@@ -10154,7 +10389,7 @@ const p5wgex = (function(){
       const {
         renderType = "forward", name = "", camera,
         useModel = true, useModelView = true, useProj = true,
-        useView = true, useNormal = true, useModelNormal = true
+        useNormal = true, useModelNormal = true
       } = options;
       const tf = this.transform;
       const cam = this.getCamera(camera);
@@ -10167,10 +10402,9 @@ const p5wgex = (function(){
       if (useModel) this.node.setUniform("u" + name + "ModelMatrix", modelMat.m)
       if (useModelView) this.node.setUniform("u" + name + "ModelViewMatrix", modelViewMat.m)
       if (useProj) this.node.setUniform("u" + name + "ProjMatrix", projMat.m);
-      // forwardの場合はトランスフォームとライティングが一体化してるのでここで登録する必要がある。
-      if ((renderType === "forward") && useView) {
-        this.node.setUniform("u" + name + "ViewMatrix", viewMat.m);
-      }
+
+      // uViewMatrixは廃止されました。
+
       // forwardとdeferredの場合にのみ法線情報を登録する
       if ((renderType === "forward" || renderType === "deferred") && (useNormal || useModelNormal)) {
         const normalMat = getInverseTranspose3x3(modelViewMat.getMat3());
@@ -10180,7 +10414,312 @@ const p5wgex = (function(){
       }
       return this;
     }
+    setFogByBand(band = 0.02){
+      const cam = this.getCamera();
+      const depthCenter = 0.5 + 0.5 * cam.getNDC(cam.getView().center).z;
+      this.fogParams.near = depthCenter - band;
+      this.fogParams.far = depthCenter + band;
+      return this;
+    }
+    setFogByDistance(distance = 0.1){
+      const cam = this.getCamera();
+      const {front, center} = cam.getView();
+      this.fogParams.near = 0.5 + 0.5 * cam.getNDC(center.copy().addScalar(front, distance)).z;
+      this.fogParams.far = 0.5 + 0.5 * cam.getNDC(center.copy().addScalar(front, -distance)).z;
+      return this;
+    }
+    setFogUniform(){
+      this.node.setUniform("uFogParams", [this.fogParams.near, this.fogParams.far]);
+      return this;
+    }
   }
+
+  // PBR.
+  // uniformで構造体指定を使う
+  // setLightingUniformでビューベース指定するなど、共通点は多い
+  // StandardでuMonoColorとしていたところがalbedoになり、まあ色々違う。
+  // ambientとかも無いし。あるのはEmissiveだけ。ライティングだと暗い場合の気休め的な。
+  // そしてmetallicとroughnessでおしまい。あとはすべてライト。つまり、
+  // albedo,emissive,各種ライトの色、3～5つしか色成分が出てこない。
+  // 加えて変なattenu...なんちゃらとか、なんかよくわかんない0.73とか2.0も出てこない。シンプルになります。
+  // 行列関連はほぼ同じ内容になるでしょう。
+  class PBRLightingSystem extends RenderingSystem{
+    constructor(node){
+      super(node);
+      // さしあたりこんだけ。まあlineも要るでしょう。ライト使わないので内容的には一緒。
+      // なおForwardPBRにもnoLightのオプションがあります。使う場合、....
+      // albedoで単色表現しよう。emissiveはライティング用とする。つまりalbedoからゴールまでワープ。
+      // postProcessを分岐させる。つまりalbedoまんま、もしくはライティング。
+      // alpha処理挟むならmainProcessでなんかする。まあすっからかんだが。preでいいだろ。
+      this.registShader("forwardPBRLight", new ForwardPBRLightingShader(node));
+      this.registShader("lines", new LineShader(node));
+      this.prepareLightingParameters();
+      //this.renderingType = "forward";
+    }
+    initialize(options = {}){
+      // optionsをそのまま渡す形式にします
+      const { type = "forward" } = options; // forward, deferred, lines.
+      switch(type) {
+        case "forward":
+          this.shaders.forwardPBRLight.initialize(options);
+          //this.renderingType = "forward";
+          this.bindShader("forwardPBRLight");
+          break;
+        case "lines":
+          this.shaders.lines.initialize(options);
+          //this.renderingType = "lines";
+          this.bindShader("lines");
+          break;
+      }
+      this.initializeTransform();
+      return this;
+    }
+    prepareLightingParameters(){
+      this.lightingParams = {
+        albedo:[1,1,1,1],
+        emissive:[0,0,0],
+        metallic:0.5,
+        roughness:0.5
+      };
+      // この辺は構造体uniformを意識して書くべき（objectでぶち込むんで）
+      // あと方向の概念が逆なので注意（ライトだけ。位置は通常。当然だが。）
+      // rgbを返す「coulour3」を用意する（さすがにめんどくさくなってきた）
+      // coulourのoptionとして用意するより合理的だと思う
+      // そうね、lightsにぶちこんでけばよいかと（？）
+      this.directionalLightParams = {
+        count:0,
+        lights:[] // direction:Vec3(0,0,1),color:[1,1,1]
+      };
+      this.pointLightParams = {
+        count:0,
+        lights:[] // position:Vec3(0,0,0),color:[1,1,1],distance:1,decay:20
+      };
+      this.spotLightParams = {
+        count:0,
+        lights:[] // position:Vec3(0,0,0),direction:Vec3(0,0,1),color:[1,1,1],
+        // distance:1, decay:20, coneCos:0.5, penumbraCos:1.0
+        // coneCosより内側で0～1,penumbraCosより内側はすべて1
+      }
+      // setするときはcountの数だけlightsに従ってぶちこんでけばいい
+      this.fogParams = {
+        near:0.88,
+        far:0.92
+      }
+    }
+    setLight(params = {}){
+      // albedo,emissive,metallic,roughnessを設定する感じ
+      // 指定しなかったものについては据え置きとなる。
+      const keys = Object.keys(params);
+      for(const _key of keys){ this.lightingParams[_key] = params[_key]; }
+      return this;
+    }
+    // setVectorParamは不要かなぁVec3のコンストラクタでいいんじゃない？
+    setDirectionalLight(params = {}){
+      const {count = 0, lights:_lights = []} = params;
+      const target = this.directionalLightParams;
+      target.count = count;
+      for(let i=0; i<count; i++){
+        const data = _lights[i];
+        const {
+          direction = [0,0,1], color:_color = [1,1,1]
+        } = data;
+        target.lights[i] = {
+          direction:new Vec3(direction),
+          color:coulour3(_color)
+        };
+      }
+      return this;
+    }
+    setPointLight(params = {}){
+      const {count = 0, lights:_lights = []} = params;
+      const target = this.pointLightParams;
+      target.count = count;
+      for(let i=0; i<count; i++){
+        const data = _lights[i];
+        const {
+          position = [0,0,0], color:_color = [1,1,1],
+          distance = 1, decay = 20
+        } = data;
+        target.lights[i] = {
+          position:new Vec3(position),
+          color:coulour3(_color),
+          distance:distance,
+          decay:decay
+        };
+      }
+      return this;
+    }
+    setSpotLight(params = {}){
+      const {count = 0, lights:_lights = []} = params;
+      const target = this.spotLightParams;
+      target.count = count;
+      for(let i=0; i<count; i++){
+        const data = _lights[i];
+        const {
+          direction = [0,0,1], position = [0,0,0],
+          color:_color = [1,1,1], distance = 1, decay = 20,
+          coneCos = 0.5, penumbraCos = 1
+        } = data;
+        target.lights[i] = {
+          direction:new Vec3(direction),
+          position:new Vec3(position),
+          color:coulour3(_color),
+          distance:distance, decay:decay,
+          coneCos:coneCos, penumbraCos:penumbraCos
+        };
+      }
+      return this;
+    }
+    setColor(prop){
+      // 冷静に考えて、uMonoColorでいいですね
+      // PBRの場合setLightでalbedoを使って設定するんで、
+      // linesのshaderの場合にこれを使って線の色を決めましょう。
+      // つまりPBRの場合これは使わないということですね（え？？）
+      this.node.setUniform("uMonoColor", coulour(prop));
+      return this;
+    }
+    toView(v, w, cameraBase = false){
+      // ベクトルをviewベースにする。カメラは備え付け。だからメソッド。
+      // cameraBase:trueの場合は無修正。
+      if(cameraBase)return v;
+      const viewMat = this.curCam.cam.getViewMat();
+      return Vec3.multMat4(v, viewMat, w);
+    }
+    // PBRだからね！
+    setElementaryLightUniforms(){
+      // 基本的な要素
+      this.node.setUniform("uAlbedo", this.lightingParams.albedo);
+      this.node.setUniform("uEmissive", this.lightingParams.emissive);
+      this.node.setUniform("uMetallic", this.lightingParams.metallic);
+      this.node.setUniform("uRoughness", this.lightingParams.roughness);
+      return this;
+    }
+    setDirectionalLightUniforms(options = {}){
+      const {cameraBase = false} = options;
+      // directionalLight~~
+      const dl = this.directionalLightParams;
+      // lightsが長かったりcountが長かったりしないためにガードする
+      const properCount = Math.min(dl.count, dl.lights.length);
+      this.node.setUniform("uNumDirectionalLights", properCount);
+      // 構造体...配列をぶちこむんで、作っちゃおう。
+      const dlArray = new Array(properCount);
+      for(let i=0; i<properCount; i++){
+        const data = dl.lights[i];
+        dlArray[i] = {
+          direction:this.toView(data.direction, 0.0, cameraBase),
+          color:data.color
+        };
+      }
+      this.node.setUniform("struct/uDirectionalLights", dlArray);
+      return this;
+    }
+    setPointLightUniforms(options = {}){
+      const {cameraBase = false} = options;
+      // pointLight~~
+      const pl = this.pointLightParams;
+      const properCount = Math.min(pl.count, pl.lights.length);
+      this.node.setUniform("uNumPointLights", properCount);
+      const plArray = new Array(properCount);
+      for(let i=0; i<properCount; i++){
+        const data = pl.lights[i];
+        plArray[i] = {
+          position:this.toView(data.position, 1.0, cameraBase),
+          color:data.color,
+          distance:data.distance,
+          decay:data.decay
+        };
+      }
+      this.node.setUniform("struct/uPointLights", plArray);
+      return this;
+    }
+    setSpotLightUniforms(options = {}){
+      // coneCosとpenumbraCosを角度指定にするoptionsを導入予定
+      const {cameraBase = false} = options;
+      // spotLight~~
+      const sl = this.spotLightParams;
+      const properCount = Math.min(sl.count, sl.lights.length);
+      this.node.setUniform("uNumSpotLights", properCount);
+      const slArray = new Array(properCount);
+      for(let i=0; i<properCount; i++){
+        const data = sl.lights[i];
+        slArray[i] = {
+          direction:this.toView(data.direction, 0.0, cameraBase),
+          position:this.toView(data.position, 1.0, cameraBase),
+          color:data.color,
+          distance:data.distance,
+          decay:data.decay,
+          coneCos:data.coneCos, penumbraCos:data.penumbraCos
+        };
+      }
+      this.node.setUniform("struct/uSpotLights", slArray);
+      return this;
+    }
+    setLightingUniforms(options = {}){
+      // cameraBaseがtrueの場合はview指定
+      // PBRの計算上の都合により[0,0,1]で真正面となるです
+      // spotLightのオプションで角度指定にできるようにするといいかも？
+
+      this.setElementaryLightUniforms();
+
+      this.setDirectionalLightUniforms(options);
+
+      this.setPointLightUniforms(options);
+
+      this.setSpotLightUniforms(options);
+
+      return this;
+
+      // 柔軟性のため。こうすることで個別にoptionの内容を変えたりできる。
+      // 具体的にはcameraBaseを適用したりしなかったりできる
+      // とはいえまあ基本的にはsetLightingUniformsしか使わないだろうけれど
+    }
+    setMatrixUniforms(options = {}){
+      const {
+        renderType = "forward", name = "", camera:_camera
+      } = options;
+      const tf = this.transform;
+      // _cameraがundefinedの場合は現在のカメラが使われる
+      const cam = this.getCamera(_camera);
+
+      // 共通の行列処理
+      const modelMat = tf.getModelMat();
+      const viewMat = cam.getViewMat();
+      const projMat = cam.getProjMat();
+      const modelViewMat = new Mat4(getMult4x4(modelMat.m, viewMat.m));
+      this.node.setUniform("u" + name + "ModelMatrix", modelMat.m)
+      this.node.setUniform("u" + name + "ModelViewMatrix", modelViewMat.m)
+      this.node.setUniform("u" + name + "ProjMatrix", projMat.m);
+
+      // forwardの場合のみ法線情報を追加(lineの場合は不要)
+      if(renderType === "forward"){
+        const normalMat = getInverseTranspose3x3(modelViewMat.getMat3());
+        const modelNormalMat = getInverseTranspose3x3(modelMat.getMat3());
+        this.node.setUniform("u" + name + "NormalMatrix", normalMat)
+        this.node.setUniform("u" + name + "ModelNormalMatrix", modelNormalMat);
+      }
+      return this;
+    }
+    setFogByBand(band = 0.02){
+      const cam = this.getCamera();
+      const depthCenter = 0.5 + 0.5 * cam.getNDC(cam.getView().center).z;
+      this.fogParams.near = depthCenter - band;
+      this.fogParams.far = depthCenter + band;
+      return this;
+    }
+    setFogByDistance(distance = 0.1){
+      const cam = this.getCamera();
+      const {front, center} = cam.getView();
+      this.fogParams.near = 0.5 + 0.5 * cam.getNDC(center.copy().addScalar(front, distance)).z;
+      this.fogParams.far = 0.5 + 0.5 * cam.getNDC(center.copy().addScalar(front, -distance)).z;
+      return this;
+    }
+    setFogUniform(){
+      this.node.setUniform("uFogParams", [this.fogParams.near, this.fogParams.far]);
+      return this;
+    }
+  }
+
+  // 以上。もうデモはできてるんで、難しくないはず：https://openprocessing.org/sketch/2420819
 
   // ---------------------------------------------------------------------------------------------- //
   // Performance checker
@@ -10260,6 +10799,8 @@ const p5wgex = (function(){
     }
   }
 
+  // ---------------------------------------------------------------------------------------------- //
+  // fisceToyBox関連
 
   // ---------------------------------------------------------------------------------------------- //
   // Export.
@@ -10270,6 +10811,7 @@ const p5wgex = (function(){
   ex.getMult4x4 = getMult4x4; // こっちは使い道あるかもしれない
   ex.getInverseTranspose3x3 = getInverseTranspose3x3;
   ex.getTranspose3x3 = getTranspose3x3; // これ必要ですね...
+
   // 色関連
   ex.presetColors = presetColors; // 色パレット
   ex.hsv2rgb = hsv2rgb;
@@ -10279,21 +10821,25 @@ const p5wgex = (function(){
   ex.hsl2rgb_overlay = hsl2rgb_overlay;
   ex.hslArray_overlay = hslArray_overlay;
   ex.coulour = coulour; // 汎用色指定関数
-  // そのうちやめたいnoLoop()
+  ex.coulour3 = coulour3; // ...の、RGB版
   ex.ErrorSystem = ErrorSystem; // エラーシステム
   ex.clamp = clamp; // clamp関数
   ex.PerformanceChecker = PerformanceChecker; // パフォーマンスチェック用。新しくしました。
 
+  // Geometry関連
   ex.meshUtil = meshUtil; // 最終的にはここにすべてまとめる。registMeshも廃止する方向で。getNormalsも不要です。
+  ex.createGeom = createGeom;
 
   // snipet.
   ex.snipet = snipet; // glslのコードの略記用
 
   // shaderPrototype.
   ex.ShaderPrototype = ShaderPrototype;
+  ex.Shader3DPrototype = Shader3DPrototype;
   ex.PlaneShader = PlaneShader; // 板ポリ芸用
   ex.RenderingSystem = RenderingSystem;
   ex.StandardLightingSystem = StandardLightingSystem; // 古典的なフォン/ランバートのライティングによるフォワード/ディファードのライティングテンプレート
+  ex.PBRLightingSystem = PBRLightingSystem;
 
   // class.
   ex.Timer = Timer;
@@ -10309,9 +10855,6 @@ const p5wgex = (function(){
   ex.CameraManager = CameraManager;
   ex.Transform = Transform;
   ex.Vec3 = Vec3;
-
-  // Vec3とGeometryの生成関数
-  ex.createGeom = createGeom;
   ex.createVec3 = createVec3;
 
   // data格納用のshader欲しいかも
