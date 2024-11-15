@@ -438,6 +438,9 @@ const foxIA = (function(){
       if (keydown) { window.addEventListener('keydown', this.keyDownAction.bind(this), {passive:false}); }
       if (keyup) { window.addEventListener('keyup', this.keyUpAction.bind(this), {passive:false}); }
     }
+    getRect(){
+      return this.rect;
+    }
     updateCanvasData(){
       const newRect = canvas.getBoundingClientRect();
       // 対象のキャンバスを更新
@@ -10223,10 +10226,24 @@ const p5wgex = (function(){
         far:0.92
       }
     }
+    easyLight(params = {}){
+      // 色々面倒な場合の簡易措置。cameraBaseのdefaultはtrueです。オビコン前提。
+      const {
+        direction = [0,0,-1], color = [1,1,1,1],
+        cameraBase = true, process = [], init = true
+      } = params;
+      this.setLight({useSpecular:true});
+      this.setDirectionalLight({count:1,direction:direction});
+      this.setFlag(0).setColor(color);
+      this.setLightingUniforms({cameraBase:cameraBase});
+      this.setTransform(process, init).setMatrixUniforms();
+      return this;
+    }
     setLight(info = {}){
       const keys = Object.keys(info);
       for(const _key of keys){ this.lightingParams[_key] = info[_key]; }
       //this.lightingParams.use = true;
+      return this; // ごめん忘れてた
     }
     setVectorParam(_key, target, value){
       // this[prop][key]はベクトルの配列である
@@ -10272,6 +10289,7 @@ const p5wgex = (function(){
         }
       }
       //if (this.directionalLightParams.count > 0) { this.directionalLightParams.use = true; }
+      return this; // ごめん忘れてた
     }
     // pointLight.
     setPointLight(params = {}){
@@ -10284,6 +10302,7 @@ const p5wgex = (function(){
         }
       }
       //if (this.pointLightParams.count > 0) { this.pointLightParams.use = true; }
+      return this; // ごめん忘れてた
     }
     // spotLight.
     setSpotLight(params = {}){
@@ -10296,6 +10315,7 @@ const p5wgex = (function(){
         }
       }
       //if (this.spotLightParams.count > 0) { this.spotLightParams.use = true; }
+      return this; // ごめん忘れてた
     }
     setFlag(flag){
       // フラグの切り替えめんどくさいんだよ
@@ -10506,6 +10526,23 @@ const p5wgex = (function(){
         far:0.92
       }
     }
+    easyLight(params = {}){
+      const {
+        metallic = 0.5, roughness = 0.5,
+        albedo = [1,1,1], direction = [0,0,1], cameraBase = true,
+        color = [1,1,1], process = [], init = true
+      } = params;
+      this.setLight({albedo, metallic, roughness});
+      this.setDirectionalLight({
+        count:1,
+        lights:[{
+          direction:new Vec3(direction), color:coulour3(color)
+        }]
+      });
+      this.setLightingUniforms({cameraBase});
+      this.setTransform(process, init).setMatrixUniforms();
+      return this;
+    }
     setLight(params = {}){
       // albedo,emissive,metallic,roughnessを設定する感じ
       // 指定しなかったものについては据え置きとなる。
@@ -10660,11 +10697,8 @@ const p5wgex = (function(){
       // spotLightのオプションで角度指定にできるようにするといいかも？
 
       this.setElementaryLightUniforms();
-
       this.setDirectionalLightUniforms(options);
-
       this.setPointLightUniforms(options);
-
       this.setSpotLightUniforms(options);
 
       return this;
