@@ -152,6 +152,19 @@
 // ...
 // PBRが入ってないのはいつでもできるから。デモもうできてるし。
 
+// 20241205
+// textureについて
+// floatTextureをstorageとして扱う場合にそれ単体で生成できるようにする
+// ただvec4の場合unpack-premultiplyAlphaが邪魔をするので（format:RGBAの場合のみ）
+// レアケースですが一時的にそれを解除する処理を追加する
+// 具体的にはmultiplyAlpha:falseとかしてfalseの場合に一時的にfalseにして後で戻す（デフォルトtrueは据え置き）
+// separateAlpha:true/falseとかの方がいいかも。
+// if(this.separateAlpha){~~~~}
+// fboでテクスチャする場合は空っぽで生成するうえ、shader経由でしか更新しないので必要ないですね。
+// separateAlphaのdefault:falseにしてregistTextureの際にtrueにすることで
+// regist時とupdate時に解除されるようにする
+// 更新完了
+
 /*
 外部から上書きするメソッドの一覧
 pointerPrototype:
@@ -2081,8 +2094,10 @@ const p5wgex = (function(){
     d.r16f = gl.R16F;
     d.r32f = gl.R32F;
     d.rg32f = gl.RG32F;
+    d.rgb32f = gl.RGB32F;
     d.red = gl.RED;
     d.rg = gl.RG;
+    d.rgb = gl.RGB;
     d.short = gl.SHORT;
     d.ushort = gl.UNSIGNED_SHORT;
     d.int = gl.INT;
@@ -2547,6 +2562,7 @@ const p5wgex = (function(){
   // r32fとか使ってみたいわね。効率性よさそう
   // これtextureの話しかしてないからこれでいいね？
   // reference: https://registry.khronos.org/webgl/specs/latest/2.0/#TEXTURE_TYPES_FORMATS_FROM_DOM_ELEMENTS_TABLE
+  // internalFormat --- format --- type
   // gl.RG32F --- gl.RG --- gl.FLOAT
   // gl.RGBA32F --- gl.RGBA --- gl.FLOAT
   // gl.RGBA16F --- gl.RGBA --- gl.FLOAT
@@ -2629,6 +2645,11 @@ const p5wgex = (function(){
         info.src = {};
       }
     }
+    // registTextureにおいてseparateAlpha:trueとすることで
+    // format:rgbaの際のunpack時にmultiplyAlphaを解除してalphaが乗算されないようにできる
+    // floatTextureをvec4で用いる場合これをしないとrgbの値をいじられてしまうので
+    // fboの場合はshaderでtextureをいじる都合上これは必要ありません。
+    if(info.separateAlpha === undefined){ info.separateAlpha = false; }
   }
 
   // info.srcが用意されてないならnullを返す。一種のバリデーション。
@@ -2702,8 +2723,15 @@ const p5wgex = (function(){
     gl.bindTexture(target, tex);
 
     // テクスチャにメモリ領域を確保。ここの処理はCUBE_MAPの場合ちょっと異なる。場合分けする。
+    if(info.separateAlpha){
+      // alphaを分離する場合はUNPACK_PREMULTIPLY_ALPHA_WEBGLを一旦falseにする
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    }
     _texImage(gl, target, data, info.w, info.h, dict[info.internalFormat], dict[info.format], dict[info.type]);
-
+    if(info.separateAlpha){
+      // 戻す
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    }
     // mipmapの作成はどうも失敗してるみたいです。原因は調査中。とりあえず使わないで。
     //if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
 
@@ -3000,6 +3028,7 @@ const p5wgex = (function(){
       this.src = info.src; // ソース。p5.Graphicsの場合これを使って...
       _validateForTexture(info); // _createTexture内部ではやらないことになった
       this.target = info.target; // テクスチャターゲット。デフォルトは2dですがcube_mapも使えるようにします。
+      this.separateAlpha = info.separateAlpha; // たとえばfloatTexture,vec4の場合にこれがないとまずい
       this.tex = _createTexture(gl, info, dict);
       // infoのバリデーションが済んだので各種情報を格納
       this.w = (info.w !== undefined ? info.w : 1);
@@ -3054,7 +3083,13 @@ const p5wgex = (function(){
 
       const data = _getTextureData(this.target, this.src);
       gl.bindTexture(target, this.tex);
+      if(this.separateAlpha){
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      }
       _texImage(gl, target, data, this.w, this.h, dict[this.formatParam.internalFormat], dict[this.formatParam.format], dict[this.formatParam.type]);
+      if(this.separateAlpha){
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      }
 
       gl.bindTexture(target, null);
       // 果たしてこれでちゃんと上書きされるのか...
@@ -6777,11 +6812,22 @@ const p5wgex = (function(){
   // 4x4正方行列
   // イメージ的には行指定で0,1,2,3で最上段、以下下の段4,5,6,7,と続く。
   // こっちにも例のメソッドを移植する
+
+  // ...argumentsでも生成してほしいですね...
+  // あとmultなんですけど「.m」をいちいち取るのめんどくさいです
+  // 後方互換性あると思うんでよろしく
+  // multなんですけどreturn thisしてよくないか？？？transposeとかも。別にいいっしょ。
+  // ああそうかglsl内部じゃないから...んー...
   class Mat4{
     constructor(data){
       this.m = new Array(16).fill(0);
       if(data === undefined){
         this.initialize();
+      }else if(typeof data === 'number'){
+        // 16個の数を直接指定する方法でOKにする
+        for(let i=0; i<arguments.length; i++){
+          this.m[i] = arguments[i];
+        }
       }else{
         for(let i=0; i<16; i++){
           this.m[i] = (data[i] !== undefined ? data[i] : 0);
@@ -6790,6 +6836,7 @@ const p5wgex = (function(){
     }
     initialize(){
       this.m = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+      return this;
     }
     copy(){
       return new Mat4(this.m);
@@ -6799,6 +6846,7 @@ const p5wgex = (function(){
       for(let i=0; i<16; i++){
         this.m[i] = data[i];
       }
+      return this;
     }
     getMat4(){
       return this.m;
@@ -6811,15 +6859,26 @@ const p5wgex = (function(){
       ];
     }
     mult(s){
-      // sは長さ16の配列で、4x4行列とみなす。
+      // sはMat4もしくは長さ16の配列で、4x4行列とみなす。
       // sを左からmに掛けることでthis.mを変化させる
-      const data = getMult4x4(s, this.m);
+      const target = (s instanceof Mat4 ? s.m : s);
+      const data = getMult4x4(target, this.m);
       this.set(data);
+      return this;
+    }
+    multMat4(s){
+      // sはMat4もしくは長さ16の配列で、4x4行列
+      // sを右から掛けることでmを変化させる
+      const target = (s instanceof Mat4 ? s.m : s);
+      const data = getMult4x4(this.m, target);
+      this.set(data);
+      return this;
     }
     transpose(){
       // 転置。
       const data = getTranspose4x4(this.m);
       this.set(data);
+      return this;
     }
     apply(v, transpose = true, copy = false){
       // Vec3型のvに掛け算。ただし転置して左上の3x3を適用する。
@@ -6866,31 +6925,37 @@ const p5wgex = (function(){
       // x軸の周りにtラジアン回転の行列を掛ける
       const data = getRotX(t);
       this.mult(data);
+      return this;
     }
     rotateY(t){
       // y軸の周りにtラジアン回転の行列を掛ける
       const data = getRotY(t);
       this.mult(data);
+      return this;
     }
     rotateZ(t){
       // z軸の周りにtラジアン回転の行列を掛ける
       const data = getRotZ(t);
       this.mult(data);
+      return this;
     }
     rotate(t, a, b, c){
       // 単位軸ベクトル(a, b, c)の周りにtラジアン回転の行列
       const data = getRot(t, a, b, c);
       this.mult(data);
+      return this;
     }
     translate(a, b, c){
       // a, b, cの平行移動の行列を掛ける
       const data = getTranslate(a, b, c);
       this.mult(data);
+      return this;
     }
     scale(sx, sy, sz){
       // sx, sy, sz倍の行列を掛ける
       const data = getScale(sx, sy, sz);
       this.mult(data);
+      return this;
     }
   }
 
@@ -7061,6 +7126,40 @@ const p5wgex = (function(){
       result[i] = (n[a0] * n[a1] - n[a2] * n[a3]) / det;
     }
     return result;
+  }
+
+  // 小行列式に因子を掛けて返すだけ
+  function _getSmallDet3x3(m,c=0){
+    m = (m instanceof Mat4 ? m.m : m);
+    // mは16配列
+    const a=c%4;
+    const b=(c/4)|0;
+    // 例：a=2,b=1の場合は2+4でpivotは6です
+    // a=1,b=3の場合は4*3+1=13がpivotです～
+    const detSign = 1-2*((a+b)&1);
+    const u=[];
+    for(let i=0;i<16;i++){
+      if((i%4)===a || ((i/4)|0)===b)continue;
+      u.push(m[i]);
+    }
+    return (u[0]*u[4]*u[8] + u[1]*u[5]*u[6] + u[2]*u[3]*u[7] - u[0]*u[5]*u[7] - u[1]*u[3]*u[8] - u[2]*u[4]*u[6])*detSign;
+  }
+
+  // 4x4の逆行列を返す。
+  function getInverse4x4(m){
+    m = (m instanceof Mat4 ? m.m : m);
+    // mの逆行列出すで
+    let result = [];
+    for(let c=0;c<16;c++){
+      const d = _getSmallDet3x3(m, c);
+      result.push(d);
+    }
+    // 行列式これでいいよもう
+    const determinantValue = result[0]*m[0]+result[1]*m[1]+result[2]*m[2]+result[3]*m[3];
+
+    const resultMat = new Mat4(result.map(x=>x/determinantValue));
+    resultMat.transpose();
+    return resultMat;
   }
 
   // ベースにあるのが射影のPでそこにビューのVを掛けてさらにモデルのMを掛けていく
@@ -10213,11 +10312,14 @@ const p5wgex = (function(){
       };
       this.spotLightParams = {
         //use:false,
+        // angleとconcは配列ですね。ここPBRはlightごとになってるからいいんだけど
+        // こっちは全部配列じゃないとまずいわけだ
+        // ああこういうことがあるから嫌なんだよな...まあ仕方ないか。ダイレクトでいいか。
         count:0,
         location:[new Vec3(0,0,4)],
         direction:[new Vec3(0,0,-1)],
-        angle:Math.PI/4,
-        conc:100,
+        angle:[Math.PI/4],
+        conc:[100],
         diffuseColor:[1, 1, 1],
         specularColor:[1, 1, 1]
       };
@@ -10845,6 +10947,7 @@ const p5wgex = (function(){
   ex.getMult4x4 = getMult4x4; // こっちは使い道あるかもしれない
   ex.getInverseTranspose3x3 = getInverseTranspose3x3;
   ex.getTranspose3x3 = getTranspose3x3; // これ必要ですね...
+  ex.getInverse4x4 = getInverse4x4; // 4x4の逆行列
 
   // 色関連
   ex.presetColors = presetColors; // 色パレット
